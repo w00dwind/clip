@@ -1,0 +1,46 @@
+import os, html
+from flask import Flask, request, abort
+
+app = Flask(__name__)
+TOKEN = os.environ["CLIP_TOKEN"]
+FILE = "/var/lib/clip/clip.txt"
+
+os.makedirs(os.path.dirname(FILE), exist_ok=True)
+open(FILE, "a").close()
+
+PAGE = """<!doctype html><meta charset=utf-8><title>clip</title>
+<style>body{{font-family:system-ui;max-width:640px;margin:2em auto;padding:0 1em}}
+textarea{{width:100%;height:240px;font-family:ui-monospace,monospace;font-size:14px}}
+input,button{{font-size:16px;padding:.5em;margin:.3em 0}}</style>
+<h2>clip</h2>
+<form method=post>
+<input type=password name=token placeholder=token required style="width:100%">
+<textarea name=text autofocus>{cur}</textarea>
+<button>save</button> {msg}
+</form>"""
+
+def render(msg=""):
+    return PAGE.format(cur=html.escape(open(FILE).read()), msg=msg)
+
+@app.get("/")
+def home():
+    return render()
+
+@app.post("/")
+def save():
+    if request.form.get("token") != TOKEN: abort(403)
+    text = request.form.get("text", "")
+    open(FILE, "w").write(text)
+    return render("<small>✓ saved</small>")
+
+@app.get("/raw")
+def raw():
+    if request.args.get("t") != TOKEN and request.headers.get("X-Token") != TOKEN:
+        abort(403)
+    return open(FILE).read(), 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+@app.put("/raw")
+def put_raw():
+    if request.headers.get("X-Token") != TOKEN: abort(403)
+    open(FILE, "w").write(request.get_data(as_text=True))
+    return "ok\n"
