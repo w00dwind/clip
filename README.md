@@ -5,6 +5,14 @@
 **Веб-интерфейс:** [https://cpbrd.duckdns.org:8443](https://cpbrd.duckdns.org:8443)
 
 ---
+## Установка клиента
+```bash
+wget -qO- (https://raw.githubusercontent.com/w00dwind/clip/refs/heads/main/client.sh) | sh
+source ~/.bashrc
+```
+
+
+
 
 ## 📋 Команды
 
