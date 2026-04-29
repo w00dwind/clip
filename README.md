@@ -7,7 +7,7 @@
 ---
 ## Установка клиента
 ```bash
-curl -L (https://raw.githubusercontent.com/w00dwind/clip/refs/heads/main/client.sh) | sh
+curl -L https://raw.githubusercontent.com/w00dwind/clip/refs/heads/main/client.sh | sh
 source ~/.bashrc
 ```
 
