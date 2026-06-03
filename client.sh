@@ -1,32 +1,102 @@
 #!/usr/bin/env bash
-# install-clip-client.sh — добавляет clip-команды в ~/.bashrc
-# usage:  ./install-clip-client.sh
-#         CLIP_HOST=cpbrd.duckdns.org:8443 CLIP_TOKEN=secret ./install-clip-client.sh
+# install-clip-client.sh — добавляет clip-команды в ~/.bashrc или ~/.zshrc
+# usage:
+#   ./install-clip-client.sh                       # автоопределение shell
+#   ./install-clip-client.sh --shell bash          # явно bash
+#   ./install-clip-client.sh --shell zsh           # явно zsh
+#   ./install-clip-client.sh --rc ~/.config/myrc   # произвольный файл
+#   CLIP_HOST=... CLIP_TOKEN=... ./install-clip-client.sh
+#   ./install-clip-client.sh --uninstall
 
 set -eu
 
 DEFAULT_HOST="cpbrd.duckdns.org:8443"
+SHELL_HINT=""
+RC=""
+UNINSTALL="no"
+
+# ---- разбор аргументов ----
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --shell) SHELL_HINT="$2"; shift 2 ;;
+    --rc)    RC="$2"; shift 2 ;;
+    --uninstall) UNINSTALL="yes"; shift ;;
+    -h|--help)
+      sed -n '2,12p' "$0"; exit 0 ;;
+    *) echo "неизвестный аргумент: $1" >&2; exit 2 ;;
+  esac
+done
+
+# ---- определить shell ----
+detect_shell() {
+  # 1. явный hint
+  if [ -n "$SHELL_HINT" ]; then echo "$SHELL_HINT"; return; fi
+  # 2. родительский процесс (но скрипт запускается через bash, поэтому ненадёжно)
+  # 3. $SHELL — что у пользователя в /etc/passwd
+  case "${SHELL:-}" in
+    */zsh)  echo "zsh";  return ;;
+    */bash) echo "bash"; return ;;
+  esac
+  # 4. наличие rc-файлов
+  [ -f "$HOME/.zshrc" ]  && { echo "zsh";  return; }
+  [ -f "$HOME/.bashrc" ] && { echo "bash"; return; }
+  # 5. дефолт
+  echo "bash"
+}
+
+SH="$(detect_shell)"
+case "$SH" in
+  bash) RC_DEFAULT="$HOME/.bashrc" ;;
+  zsh)  RC_DEFAULT="$HOME/.zshrc"  ;;
+  *) echo "неподдерживаемый shell: $SH (используй --shell bash|zsh)" >&2; exit 2 ;;
+esac
+
+RC="${RC:-$RC_DEFAULT}"
+MARK_BEGIN="# >>> clip client >>>"
+MARK_END="# <<< clip client <<<"
+
+# ---- удалить старый блок (для install и uninstall) ----
+remove_old_block() {
+  if [ -f "$RC" ] && grep -qF "$MARK_BEGIN" "$RC"; then
+    echo "удаляю предыдущий блок clip из $RC (бэкап → ${RC}.bak)"
+    sed -i.bak "/$MARK_BEGIN/,/$MARK_END/d" "$RC"
+    return 0
+  fi
+  return 1
+}
+
+if [ "$UNINSTALL" = "yes" ]; then
+  echo "shell: $SH | файл: $RC"
+  if remove_old_block; then
+    echo "✓ блок clip удалён. примени: source $RC"
+  else
+    echo "блок clip не найден в $RC"
+  fi
+  exit 0
+fi
 
 # ---- параметры ----
 HOST="${CLIP_HOST:-}"
 TOKEN="${CLIP_TOKEN:-}"
 
 if [ -z "$HOST" ]; then
-  read -rp "CLIP_HOST [$DEFAULT_HOST]: " HOST
+  printf "CLIP_HOST [%s]: " "$DEFAULT_HOST"
+  read -r HOST
   HOST="${HOST:-$DEFAULT_HOST}"
 fi
 
 if [ -z "$TOKEN" ]; then
-  read -rsp "CLIP_TOKEN: " TOKEN; echo
+  printf "CLIP_TOKEN: "
+  stty -echo 2>/dev/null || true
+  read -r TOKEN
+  stty echo 2>/dev/null || true
+  echo
 fi
 
 [ -z "$TOKEN" ] && { echo "error: пустой токен" >&2; exit 1; }
 
-RC="${BASHRC:-$HOME/.bashrc}"
-MARK_BEGIN="# >>> clip client >>>"
-MARK_END="# <<< clip client <<<"
-
 # ---- проверка соединения ----
+echo "shell: $SH | файл: $RC"
 echo "проверяю https://$HOST/raw ..."
 code=$(curl -sS -o /dev/null -w '%{http_code}' \
             -H "X-Token: $TOKEN" "https://$HOST/raw" || echo "000")
@@ -37,13 +107,13 @@ case "$code" in
   *)   echo "! сервер ответил $code (продолжаю)" ;;
 esac
 
-# ---- удалить старый блок если есть ----
-if grep -qF "$MARK_BEGIN" "$RC" 2>/dev/null; then
-  echo "удаляю предыдущий блок clip из $RC"
-  sed -i.bak "/$MARK_BEGIN/,/$MARK_END/d" "$RC"
-fi
+remove_old_block || true
 
-# ---- добавить новый блок ----
+# ---- записать блок ----
+# zsh поддерживает тот же синтаксис функций, что и bash, плюс local/case/printf
+# единственное отличие — в zsh `$1` внутри функции без аргументов даёт ошибку
+# при `set -u`, но у нас set -u не используется в .bashrc/.zshrc, так что ок.
+
 cat >> "$RC" <<EOF
 $MARK_BEGIN
 export CLIP_HOST="$HOST"
@@ -69,12 +139,12 @@ _clip_help='clip — буфер обмена через VPS (https://'\$CLIP_HOS
 cliphelp() { echo "\$_clip_help"; }
 
 clip() {
-  case "\$1" in -h|--help) echo "\$_clip_help"; return ;; esac
+  case "\${1:-}" in -h|--help) echo "\$_clip_help"; return ;; esac
   curl -fsS -H "X-Token: \$CLIP_TOKEN" "https://\$CLIP_HOST/raw"; echo
 }
 
 clipw() {
-  case "\$1" in -h|--help) echo "\$_clip_help"; return ;; esac
+  case "\${1:-}" in -h|--help) echo "\$_clip_help"; return ;; esac
   if [ \$# -gt 0 ]; then
     printf '%s' "\$*" | curl -fsS -X PUT --data-binary @- \\
       -H "X-Token: \$CLIP_TOKEN" "https://\$CLIP_HOST/raw"
@@ -85,7 +155,7 @@ clipw() {
 }
 
 clipls() {
-  case "\$1" in -h|--help) echo "\$_clip_help"; return ;; esac
+  case "\${1:-}" in -h|--help) echo "\$_clip_help"; return ;; esac
   local resp
   resp=\$(curl -fsS -H "X-Token: \$CLIP_TOKEN" "https://\$CLIP_HOST/files") || return 1
   CLIP_DATA="\$resp" python3 <<'PY'
@@ -100,7 +170,7 @@ PY
 }
 
 clipget() {
-  case "\$1" in -h|--help|"") echo "\$_clip_help"; return ;; esac
+  case "\${1:-}" in -h|--help|"") echo "\$_clip_help"; return ;; esac
   local name="\$1" dest="\${2:-.}"
   mkdir -p "\$dest"
   curl -fsS -H "X-Token: \$CLIP_TOKEN" -o "\$dest/\$name" \\
@@ -108,7 +178,7 @@ clipget() {
 }
 
 clipput() {
-  case "\$1" in -h|--help|"") echo "\$_clip_help"; return ;; esac
+  case "\${1:-}" in -h|--help|"") echo "\$_clip_help"; return ;; esac
   curl -fsS -H "X-Token: \$CLIP_TOKEN" -F "file=@\$1" "https://\$CLIP_HOST/upload"
   echo
 }
@@ -118,7 +188,7 @@ EOF
 echo
 echo "✓ clip установлен в $RC"
 echo
-echo "примени изменения:"
+echo "примени:"
 echo "  source $RC"
 echo
 echo "проверь:"
