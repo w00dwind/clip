@@ -14,6 +14,49 @@ source ~/.bashrc
 
 
 
+## Разворачивание на сервере
+
+```bash
+# 1. Зависимости
+sudo apt update && sudo apt install -y python3-venv git
+sudo git clone https://github.com/w00dwind/clip /opt/clip
+sudo python3 -m venv /opt/clip/venv
+sudo /opt/clip/venv/bin/pip install flask gunicorn
+
+# 2. Хранилище
+sudo mkdir -p /var/lib/clip/files
+
+# 3. TLS (Let's Encrypt через DNS-01 для duckdns или self-signed)
+sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+  -keyout /etc/ssl/private/clip.key -out /etc/ssl/certs/clip.crt \
+  -subj "/CN=cpbrd.duckdns.org"
+
+# 4. systemd-юнит
+sudo tee /etc/systemd/system/clip.service >/dev/null <<'EOF'
+[Unit]
+After=network.target
+
+[Service]
+Environment=CLIP_TOKEN=ЗАМЕНИ_НА_СВОЙ_ТОКЕН
+WorkingDirectory=/opt/clip
+ExecStart=/opt/clip/venv/bin/gunicorn -b 0.0.0.0:8443 \
+  --certfile /etc/ssl/certs/clip.crt --keyfile /etc/ssl/private/clip.key app:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 5. Запуск
+sudo systemctl daemon-reload && sudo systemctl enable --now clip
+sudo ufw allow 8443/tcp
+```
+
+Проверка: `curl -k https://<server>:8443/raw -H "X-Token: <токен>"`
+Обновление: `cd /opt/clip && sudo git pull && sudo systemctl restart clip`
+
+---
+
 ## 📋 Команды
 
 ### Работа с текстом
