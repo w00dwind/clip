@@ -11,6 +11,9 @@
 set -eu
 
 DEFAULT_HOST="cpbrd.duckdns.org:8443"
+# ponytail: сервер с self-signed сертификатом (доступ по IP, без домена) —
+# curl без -k откажется. Если у тебя валидный сертификат: CLIP_TLS="" ./client.sh
+CLIP_TLS="${CLIP_TLS--k}"
 SHELL_HINT=""
 RC=""
 UNINSTALL="no"
@@ -98,7 +101,7 @@ fi
 # ---- проверка соединения ----
 echo "shell: $SH | файл: $RC"
 echo "проверяю https://$HOST/raw ..."
-code=$(curl -sS -o /dev/null -w '%{http_code}' \
+code=$(curl $CLIP_TLS -sS -o /dev/null -w '%{http_code}' \
             -H "X-Token: $TOKEN" "https://$HOST/raw" || echo "000")
 case "$code" in
   200) echo "✓ сервер отвечает, токен подходит" ;;
@@ -118,6 +121,7 @@ cat >> "$RC" <<EOF
 $MARK_BEGIN
 export CLIP_HOST="$HOST"
 export CLIP_TOKEN="$TOKEN"
+export CLIP_TLS="$CLIP_TLS"
 
 _clip_help='clip — буфер обмена через VPS (https://'\$CLIP_HOST')
 
@@ -140,16 +144,16 @@ cliphelp() { echo "\$_clip_help"; }
 
 clip() {
   case "\${1:-}" in -h|--help) echo "\$_clip_help"; return ;; esac
-  curl -fsS -H "X-Token: \$CLIP_TOKEN" "https://\$CLIP_HOST/raw"; echo
+  curl \$CLIP_TLS -fsS -H "X-Token: \$CLIP_TOKEN" "https://\$CLIP_HOST/raw"; echo
 }
 
 clipw() {
   case "\${1:-}" in -h|--help) echo "\$_clip_help"; return ;; esac
   if [ \$# -gt 0 ]; then
-    printf '%s' "\$*" | curl -fsS -X PUT --data-binary @- \\
+    printf '%s' "\$*" | curl \$CLIP_TLS -fsS -X PUT --data-binary @- \\
       -H "X-Token: \$CLIP_TOKEN" "https://\$CLIP_HOST/raw"
   else
-    curl -fsS -X PUT --data-binary @- \\
+    curl \$CLIP_TLS -fsS -X PUT --data-binary @- \\
       -H "X-Token: \$CLIP_TOKEN" "https://\$CLIP_HOST/raw"
   fi
 }
@@ -157,7 +161,7 @@ clipw() {
 clipls() {
   case "\${1:-}" in -h|--help) echo "\$_clip_help"; return ;; esac
   local resp
-  resp=\$(curl -fsS -H "X-Token: \$CLIP_TOKEN" "https://\$CLIP_HOST/files") || return 1
+  resp=\$(curl \$CLIP_TLS -fsS -H "X-Token: \$CLIP_TOKEN" "https://\$CLIP_HOST/files") || return 1
   CLIP_DATA="\$resp" python3 <<'PY'
 import json, os, datetime as dt
 data = json.loads(os.environ.get("CLIP_DATA") or "[]")
@@ -173,13 +177,13 @@ clipget() {
   case "\${1:-}" in -h|--help|"") echo "\$_clip_help"; return ;; esac
   local name="\$1" dest="\${2:-.}"
   mkdir -p "\$dest"
-  curl -fsS -H "X-Token: \$CLIP_TOKEN" -o "\$dest/\$name" \\
+  curl \$CLIP_TLS -fsS -H "X-Token: \$CLIP_TOKEN" -o "\$dest/\$name" \\
     "https://\$CLIP_HOST/file/\$name" && echo "→ \$dest/\$name"
 }
 
 clipput() {
   case "\${1:-}" in -h|--help|"") echo "\$_clip_help"; return ;; esac
-  curl -fsS -H "X-Token: \$CLIP_TOKEN" -F "file=@\$1" "https://\$CLIP_HOST/upload"
+  curl \$CLIP_TLS -fsS -H "X-Token: \$CLIP_TOKEN" -F "file=@\$1" "https://\$CLIP_HOST/upload"
   echo
 }
 $MARK_END

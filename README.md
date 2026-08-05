@@ -11,6 +11,13 @@ curl -L https://raw.githubusercontent.com/w00dwind/clip/refs/heads/main/client.s
 source ~/.bashrc
 ```
 
+На вопрос `CLIP_HOST` можно ответить просто IP-адресом: `1.2.3.4:8443` — домен не нужен.
+Сертификат self-signed, поэтому клиент ходит с `curl -k`. Если у тебя валидный
+сертификат — ставь с `CLIP_TLS="" sh client.sh` и проверка вернётся.
+
+В браузере на `https://1.2.3.4:8443` будет предупреждение → «Дополнительно → Перейти»,
+один раз на профиль.
+
 
 
 
@@ -26,10 +33,12 @@ sudo /opt/clip/venv/bin/pip install flask gunicorn
 # 2. Хранилище
 sudo mkdir -p /var/lib/clip/files
 
-# 3. TLS (Let's Encrypt через DNS-01 для duckdns или self-signed)
+# 3. TLS — self-signed. Без домена подставь IP сервера:
+IP=1.2.3.4
 sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
   -keyout /etc/ssl/private/clip.key -out /etc/ssl/certs/clip.crt \
-  -subj "/CN=cpbrd.duckdns.org"
+  -subj "/CN=$IP" -addext "subjectAltName=IP:$IP"
+# (для домена: -subj "/CN=cpbrd.duckdns.org" -addext "subjectAltName=DNS:cpbrd.duckdns.org")
 
 # 4. systemd-юнит
 sudo tee /etc/systemd/system/clip.service >/dev/null <<'EOF'
