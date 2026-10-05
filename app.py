@@ -1,14 +1,19 @@
 import os
+import time
 from pathlib import Path
 from flask import Flask, request, abort, send_from_directory, jsonify, make_response, redirect
 from werkzeug.utils import secure_filename
 import mimetypes
 
 TOKEN = os.environ["CLIP_TOKEN"]
-DATA = Path("/var/lib/clip")
+DATA = Path(os.environ.get("CLIP_DATA", "/var/lib/clip"))
 TEXT_FILE = DATA / "clip.txt"
 FILES_DIR = DATA / "files"
 MAX_MB = 64
+# автоочистка после загрузки: файл удаляется, если он не входит в KEEP самых
+# новых И старше KEEP_DAYS дней. CLIP_KEEP=0 — автоочистка выключена.
+KEEP = int(os.environ.get("CLIP_KEEP", "10"))
+KEEP_DAYS = float(os.environ.get("CLIP_KEEP_DAYS", "7"))
 
 SAFE_INLINE_MIME = {
     "image/png", "image/jpeg", "image/gif", "image/webp",
@@ -35,6 +40,21 @@ def authed():
 def need_auth():
     if not authed():
         abort(403)
+
+
+def prune(keep, min_age_days=0, dry=False):
+    files = sorted((p for p in FILES_DIR.iterdir() if p.is_file()),
+                   key=lambda x: -x.stat().st_mtime)
+    cutoff = time.time() - min_age_days * 86400
+    out = []
+    for p in files[keep:]:
+        st = p.stat()
+        if st.st_mtime > cutoff:
+            continue
+        out.append({"name": p.name, "size": st.st_size, "mtime": int(st.st_mtime)})
+        if not dry:
+            p.unlink()
+    return out
 
 
 PAGE = r"""<!doctype html>
@@ -292,7 +312,22 @@ def upload():
         abort(400)
     name = secure_filename(f.filename) or "unnamed"
     f.save(FILES_DIR / name)
-    return jsonify({"name": name, "size": (FILES_DIR / name).stat().st_size})
+    size = (FILES_DIR / name).stat().st_size
+    if KEEP > 0:
+        prune(KEEP, KEEP_DAYS)
+    return jsonify({"name": name, "size": size})
+
+
+@app.post("/prune")
+def prune_files():
+    need_auth()
+    try:
+        keep = int(request.args.get("keep", KEEP or 10))
+    except ValueError:
+        abort(400)
+    if keep < 0:
+        abort(400)
+    return jsonify(prune(keep, dry=request.args.get("dry") == "1"))
 
 
 @app.get("/file/<path:name>")

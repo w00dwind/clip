@@ -2,7 +2,7 @@
 
 Утилита для быстрой передачи текста и файлов через VPS.
 
-**Веб-интерфейс:** [https://cpbrd.duckdns.org:8443](https://cpbrd.duckdns.org:8443)
+**Веб-интерфейс:** [https://aeza.frn.dedyn.io:8443](https://aeza.frn.dedyn.io:8443)
 
 ---
 ## Установка клиента
@@ -11,12 +11,27 @@ curl -L https://raw.githubusercontent.com/w00dwind/clip/refs/heads/main/client.s
 source ~/.bashrc
 ```
 
-На вопрос `CLIP_HOST` можно ответить просто IP-адресом: `1.2.3.4:8443` — домен не нужен.
-Сертификат self-signed, поэтому клиент ходит с `curl -k`. Если у тебя валидный
-сертификат — ставь с `CLIP_TLS="" sh client.sh` и проверка вернётся.
+На вопрос `CLIP_HOST` жми Enter (по умолчанию `aeza.frn.dedyn.io:8443`).
+Сертификат валидный (Let's Encrypt) — клиент проверяет TLS, браузер не ругается.
 
-В браузере на `https://1.2.3.4:8443` будет предупреждение → «Дополнительно → Перейти»,
-один раз на профиль.
+Если поднимаешь свой сервер по IP / на self-signed — ставь с `CLIP_TLS="-k" sh client.sh`
+(клиент пойдёт с `curl -k`), в браузере будет предупреждение → «Дополнительно → Перейти».
+
+### Несколько серверов (переезд при блокировках)
+
+Каждый запуск установщика добавляет профиль сервера в `~/.config/clip/hosts`
+(строка `имя host token [tls]`) и делает его активным. Второй сервер:
+
+```bash
+CLIP_HOST=other.example.org:8443 CLIP_NAME=other sh client.sh
+```
+
+```bash
+clip switch          # список профилей, активный помечен *, плюс проверка доступности
+clip switch other    # переключиться — действует сразу во всех открытых терминалах
+```
+
+Данные на серверах раздельные: текст и файлы с одного на другой не переносятся.
 
 
 
@@ -47,6 +62,10 @@ After=network.target
 
 [Service]
 Environment=CLIP_TOKEN=ЗАМЕНИ_НА_СВОЙ_ТОКЕН
+# автоочистка: после загрузки удаляются файлы, которые не входят в CLIP_KEEP
+# самых новых И старше CLIP_KEEP_DAYS дней. CLIP_KEEP=0 — выключить.
+Environment=CLIP_KEEP=10
+Environment=CLIP_KEEP_DAYS=7
 WorkingDirectory=/opt/clip
 ExecStart=/opt/clip/venv/bin/gunicorn -b 0.0.0.0:8443 \
   --certfile /etc/ssl/certs/clip.crt --keyfile /etc/ssl/private/clip.key app:app
@@ -82,6 +101,13 @@ sudo ufw allow 8443/tcp
 | `clipls` | Показать список файлов в хранилище |
 | `clipget <name> [dir]` | Скачать файл (по умолчанию в текущую директорию) |
 | `clipput <file>` | Загрузить файл в буфер |
+| `clip prune [N] [-y]` | Оставить N последних файлов (по умолчанию 10), остальные удалить. Спрашивает подтверждение, `-y` — без вопроса |
+
+### Серверы
+| Команда | Описание |
+| :--- | :--- |
+| `clip switch` | Список профилей и их доступность |
+| `clip switch <имя>` | Переключиться на другой сервер |
 
 ### Помощь
 | Команда | Описание |
